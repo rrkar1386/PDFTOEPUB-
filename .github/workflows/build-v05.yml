@@ -31,7 +31,7 @@ jobs:
           rm -rf project
           mkdir -p project
 
-          unzip -q PdfToEpub_V0.11_STRUCTURAL_STABILIZATION_ROOT.zip -d project
+          unzip -q PdfToEpub_V0.11_STRUCTURAL_STABILIZATION.zip -d project
 
           echo "Project files:"
           find project -maxdepth 3 -type f | sort
