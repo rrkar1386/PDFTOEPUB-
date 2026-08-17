@@ -1,0 +1,58 @@
+name: Build Android APK V0.15
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'PdfToEpub_V0.15_CONTEXTUAL_SPATIAL_RECONSTRUCTION.zip'
+      - '.github/workflows/build-v015.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Extract V0.15 project
+        run: |
+          rm -rf v015
+          mkdir v015
+          unzip -q PdfToEpub_V0.15_CONTEXTUAL_SPATIAL_RECONSTRUCTION.zip -d v015
+
+      - name: Verify V0.15 project
+        run: |
+          test -f v015/settings.gradle
+          test -f v015/build.gradle
+          test -f v015/app/build.gradle
+          test -f v015/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+          echo "V0.15 project structure verified."
+
+      - name: Build V0.15 APK
+        working-directory: v015
+        run: |
+          gradle clean assembleDebug --no-daemon
+
+      - name: Verify APK
+        run: |
+          find v015/app/build/outputs/apk/debug -name "*.apk" -type f -print
+          test -n "$(find v015/app/build/outputs/apk/debug -name '*.apk' -type f -print -quit)"
+
+      - name: Upload V0.15 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PDFToEPUB-V0.15-debug
+          path: v015/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
