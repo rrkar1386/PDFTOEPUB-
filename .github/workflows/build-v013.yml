@@ -16,7 +16,7 @@ jobs:
     steps:
 
       # ==================================================
-      # 1. CHECKOUT REPOSITORY
+      # 1. CHECKOUT
       # ==================================================
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -33,7 +33,16 @@ jobs:
 
 
       # ==================================================
-      # 3. IDENTIFY THE EXACT V0.13 ZIP
+      # 3. INSTALL GRADLE 8.9
+      # ==================================================
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+
+      # ==================================================
+      # 4. LOCATE EXACT V0.13 ZIP
       # ==================================================
       - name: Locate V0.13 project ZIP
         shell: bash
@@ -42,14 +51,14 @@ jobs:
 
           ZIP="PdfToEpub_V0.13_SPATIAL_RELATIONSHIP_REBUILD.zip"
 
-          echo "Looking for V0.13 project:"
+          echo "Looking for:"
           echo "$ZIP"
           echo
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERROR: V0.13 ZIP was not found."
+            echo "ERROR: V0.13 ZIP not found."
             echo
-            echo "ZIP files present in repository root:"
+            echo "ZIP files in repository:"
             find . -maxdepth 1 -type f -iname "*.zip" -print | sort
             exit 1
           fi
@@ -59,7 +68,7 @@ jobs:
 
 
       # ==================================================
-      # 4. EXTRACT ONLY V0.13
+      # 5. EXTRACT V0.13
       # ==================================================
       - name: Extract V0.13 project
         shell: bash
@@ -75,12 +84,12 @@ jobs:
 
           echo "Extraction completed."
           echo
-          echo "Extracted structure:"
-          find project -maxdepth 3 -type f | sort | head -150
+          echo "Project files:"
+          find project -maxdepth 3 -type f | sort
 
 
       # ==================================================
-      # 5. LOCATE ACTUAL GRADLE PROJECT
+      # 6. LOCATE ANDROID PROJECT
       # ==================================================
       - name: Locate Android project
         shell: bash
@@ -97,23 +106,20 @@ jobs:
             | head -1)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERROR: No Gradle settings file found."
-            echo
-            echo "Extracted project files:"
-            find project -maxdepth 5 -type f | sort
+            echo "ERROR: No settings.gradle found."
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "ANDROID PROJECT:"
+          echo "Android project:"
           echo "$PROJECT_DIR"
 
           echo "$PROJECT_DIR" > project_dir.txt
 
 
       # ==================================================
-      # 6. VERIFY PROJECT BEFORE BUILD
+      # 7. VERIFY ANDROID PROJECT
       # ==================================================
       - name: Verify Android project
         shell: bash
@@ -128,49 +134,38 @@ jobs:
 
           if [ ! -f "$PROJECT_DIR/settings.gradle" ] && \
              [ ! -f "$PROJECT_DIR/settings.gradle.kts" ]; then
-            echo "ERROR: settings.gradle not found."
+            echo "ERROR: settings.gradle missing."
             exit 1
           fi
 
-          if [ ! -f "$PROJECT_DIR/gradlew" ]; then
-            echo "ERROR: gradlew not found."
-            echo
-            echo "Project contents:"
-            find "$PROJECT_DIR" -maxdepth 3 -type f | sort
+          if [ ! -f "$PROJECT_DIR/build.gradle" ] && \
+             [ ! -f "$PROJECT_DIR/build.gradle.kts" ]; then
+            echo "ERROR: Root build.gradle missing."
             exit 1
           fi
 
-          if [ ! -d "$PROJECT_DIR/app" ]; then
-            echo "ERROR: app module not found."
-            echo
-            echo "Project directories:"
-            find "$PROJECT_DIR" -maxdepth 2 -type d | sort
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
+             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "ERROR: app/build.gradle missing."
             exit 1
           fi
-
-          chmod +x "$PROJECT_DIR/gradlew"
 
           echo "ANDROID PROJECT VERIFICATION PASSED."
 
 
       # ==================================================
-      # 7. VERIFY PROJECT'S OWN GRADLE WRAPPER
+      # 8. SHOW GRADLE VERSION
       # ==================================================
-      - name: Verify Gradle wrapper
+      - name: Verify Gradle
         shell: bash
         run: |
           set -e
 
-          PROJECT_DIR=$(cat project_dir.txt)
-
-          cd "$PROJECT_DIR"
-
-          echo "Gradle wrapper:"
-          ./gradlew --version
+          gradle --version
 
 
       # ==================================================
-      # 8. BUILD DEBUG APK
+      # 9. BUILD DEBUG APK
       # ==================================================
       - name: Build debug APK
         shell: bash
@@ -181,11 +176,11 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          ./gradlew clean assembleDebug --stacktrace
+          gradle clean assembleDebug --stacktrace
 
 
       # ==================================================
-      # 9. FIND THE GENERATED APK
+      # 10. FIND APK
       # ==================================================
       - name: Find APK
         shell: bash
@@ -194,7 +189,7 @@ jobs:
 
           PROJECT_DIR=$(cat project_dir.txt)
 
-          echo "Searching for generated APK..."
+          echo "Searching for APK..."
           echo
 
           find "$PROJECT_DIR" \
@@ -209,19 +204,19 @@ jobs:
 
           if [ -z "$APK" ]; then
             echo
-            echo "ERROR: No debug APK was generated."
+            echo "ERROR: No debug APK generated."
             exit 1
           fi
 
           echo
-          echo "DEBUG APK FOUND:"
+          echo "APK FOUND:"
           ls -lh "$APK"
 
           cp "$APK" "Smart-PDF-Reader-V0.13-debug.apk"
 
 
       # ==================================================
-      # 10. UPLOAD APK AS GITHUB ARTIFACT
+      # 11. UPLOAD APK
       # ==================================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
