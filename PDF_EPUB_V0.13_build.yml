@@ -1,0 +1,959 @@
+name: Build Smart PDF Reader V0.13
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Create V0.13 project
+        shell: bash
+        run: |
+          rm -rf project
+          mkdir -p project/app/src/main/java/com/smartpdfreader
+          mkdir -p project/app/src/main/res/layout
+          mkdir -p project/app/src/main/res/values
+
+          cat > project/settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "SmartPDFReaderV013"
+          include(":app")
+          EOF
+
+          cat > project/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.9.2' apply false
+          }
+          EOF
+
+          cat > project/gradle.properties <<'EOF'
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          org.gradle.jvmargs=-Xmx2048m
+          EOF
+
+          cat > project/app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.smartpdfreader'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.smartpdfreader'
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 13
+                  versionName '0.13'
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.7.0'
+              implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
+          }
+          EOF
+
+          cat > project/app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:theme="@style/AppTheme"
+                  android:label="PDF → EPUB V0.13"
+                  android:allowBackup="true"
+                  android:supportsRtl="true">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > project/app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:colorAccent">#777777</item>
+                  <item name="android:navigationBarColor">#000000</item>
+                  <item name="android:statusBarColor">#17141c</item>
+                  <item name="android:windowLightStatusBar">false</item>
+              </style>
+          </resources>
+          EOF
+
+          cat > project/app/src/main/res/layout/activity_main.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:orientation="vertical"
+              android:padding="10dp">
+
+              <TextView
+                  android:id="@+id/title"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:text="PDF → EPUB\nV0.13 — Region–Relationship Reconstruction Engine"
+                  android:textSize="28sp"
+                  android:textColor="#EEEEEE"
+                  android:paddingBottom="16dp"/>
+
+              <Button
+                  android:id="@+id/selectPdf"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:text="SELECT PDF"/>
+
+              <Button
+                  android:id="@+id/analyze"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:layout_marginTop="10dp"
+                  android:text="ANALYZE + RECONSTRUCT"/>
+
+              <Button
+                  android:id="@+id/save"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:layout_marginTop="10dp"
+                  android:text="SAVE EPUB"
+                  android:enabled="false"/>
+
+              <ScrollView
+                  android:layout_width="match_parent"
+                  android:layout_height="0dp"
+                  android:layout_weight="1"
+                  android:layout_marginTop="10dp">
+
+                  <TextView
+                      android:id="@+id/status"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:textSize="16sp"
+                      android:textColor="#DDDDDD"/>
+              </ScrollView>
+          </LinearLayout>
+          EOF
+
+          cat > project/app/src/main/java/com/smartpdfreader/MainActivity.java <<'EOF'
+          package com.smartpdfreader;
+
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Bundle;
+          import android.widget.Button;
+          import android.widget.TextView;
+
+          import java.io.InputStream;
+          import java.io.OutputStream;
+
+          public class MainActivity extends Activity {
+              private static final int PICK_PDF = 100;
+              private static final int CREATE_EPUB = 101;
+
+              private TextView status;
+              private Button save;
+              private Uri pdfUri;
+              private byte[] epubBytes;
+
+              @Override
+              protected void onCreate(Bundle state) {
+                  super.onCreate(state);
+                  setContentView(R.layout.activity_main);
+
+                  status = findViewById(R.id.status);
+                  Button select = findViewById(R.id.selectPdf);
+                  Button analyze = findViewById(R.id.analyze);
+                  save = findViewById(R.id.save);
+
+                  select.setOnClickListener(v -> {
+                      Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                      i.setType("application/pdf");
+                      i.addCategory(Intent.CATEGORY_OPENABLE);
+                      startActivityForResult(i, PICK_PDF);
+                  });
+
+                  analyze.setOnClickListener(v -> {
+                      if (pdfUri == null) {
+                          status.setText("Select a PDF first.");
+                          return;
+                      }
+                      analyze.setEnabled(false);
+                      status.setText("Analyzing spatial structure…");
+                      new Thread(() -> {
+                          try {
+                              InputStream in = getContentResolver().openInputStream(pdfUri);
+                              ReconstructionEngine.Result r =
+                                      ReconstructionEngine.reconstruct(in);
+                              in.close();
+                              epubBytes = r.epub;
+                              runOnUiThread(() -> {
+                                  status.setText(r.report);
+                                  save.setEnabled(true);
+                                  analyze.setEnabled(true);
+                              });
+                          } catch (Exception e) {
+                              runOnUiThread(() -> {
+                                  status.setText("V0.13 failed safely:\n" +
+                                          e.getClass().getSimpleName() + ": " +
+                                          String.valueOf(e.getMessage()));
+                                  analyze.setEnabled(true);
+                              });
+                          }
+                      }).start();
+                  });
+
+                  save.setOnClickListener(v -> {
+                      if (epubBytes == null) return;
+                      Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                      i.setType("application/epub+zip");
+                      i.putExtra(Intent.EXTRA_TITLE, "reconstructed_v0.13.epub");
+                      startActivityForResult(i, CREATE_EPUB);
+                  });
+              }
+
+              @Override
+              protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+                  super.onActivityResult(requestCode, resultCode, data);
+                  if (resultCode != RESULT_OK || data == null) return;
+
+                  if (requestCode == PICK_PDF) {
+                      pdfUri = data.getData();
+                      status.setText("PDF selected.\nReady for V0.13 spatial reconstruction.");
+                      save.setEnabled(false);
+                  } else if (requestCode == CREATE_EPUB && epubBytes != null) {
+                      try {
+                          OutputStream out =
+                                  getContentResolver().openOutputStream(data.getData());
+                          out.write(epubBytes);
+                          out.close();
+                          status.append("\n\nEPUB saved successfully.");
+                      } catch (Exception e) {
+                          status.append("\n\nSave failed: " + e.getMessage());
+                      }
+                  }
+              }
+          }
+          EOF
+
+          cat > project/app/src/main/java/com/smartpdfreader/ReconstructionEngine.java <<'EOF'
+          package com.smartpdfreader;
+
+          import com.tom_roush.pdfbox.android.PDFBoxResourceLoader;
+          import com.tom_roush.pdfbox.pdmodel.PDDocument;
+          import com.tom_roush.pdfbox.text.PDFTextStripper;
+          import com.tom_roush.pdfbox.text.TextPosition;
+
+          import java.io.ByteArrayOutputStream;
+          import java.io.InputStream;
+          import java.nio.charset.StandardCharsets;
+          import java.util.ArrayList;
+          import java.util.Collections;
+          import java.util.Comparator;
+          import java.util.HashMap;
+          import java.util.HashSet;
+          import java.util.List;
+          import java.util.Map;
+          import java.util.Set;
+          import java.util.zip.ZipEntry;
+          import java.util.zip.ZipOutputStream;
+
+          final class ReconstructionEngine {
+
+              static final class Result {
+                  final byte[] epub;
+                  final String report;
+                  Result(byte[] epub, String report) {
+                      this.epub = epub;
+                      this.report = report;
+                  }
+              }
+
+              enum Kind {
+                  TITLE, AUTHOR, HEADING, BODY, LIST_ITEM, CAPTION,
+                  SOURCE_NOTE, LICENSE, TABLE, NOTICE
+              }
+
+              static final class Glyph {
+                  String text;
+                  float x, y, w, h;
+                  Glyph(String text, float x, float y, float w, float h) {
+                      this.text = text;
+                      this.x = x;
+                      this.y = y;
+                      this.w = w;
+                      this.h = h;
+                  }
+              }
+
+              static final class Line {
+                  int page;
+                  float y, x0, x1, h;
+                  List<Glyph> glyphs = new ArrayList<>();
+                  String text() {
+                      return buildText(glyphs);
+                  }
+              }
+
+              static final class Block {
+                  int page;
+                  float x0, x1, y0, y1;
+                  Kind kind;
+                  List<Line> lines = new ArrayList<>();
+                  List<List<String>> tableRows;
+                  String text() {
+                      StringBuilder b = new StringBuilder();
+                      for (Line l : lines) {
+                          String t = l.text().trim();
+                          if (t.isEmpty()) continue;
+                          if (b.length() > 0) b.append(' ');
+                          b.append(t);
+                      }
+                      return normalize(b.toString());
+                  }
+              }
+
+              static final class Collector extends PDFTextStripper {
+                  final List<Line> lines = new ArrayList<>();
+                  int currentPage = 0;
+                  List<Glyph> pageGlyphs = new ArrayList<>();
+
+                  Collector() throws Exception {
+                      setSortByPosition(true);
+                      setShouldSeparateByBeads(false);
+                  }
+
+                  @Override
+                  protected void startPage(
+                          com.tom_roush.pdfbox.pdmodel.PDPage page) throws java.io.IOException {
+                      currentPage++;
+                      pageGlyphs = new ArrayList<>();
+                      super.startPage(page);
+                  }
+
+                  @Override
+                  protected void writeString(
+                          String text, List<TextPosition> positions)
+                          throws java.io.IOException {
+                      for (TextPosition p : positions) {
+                          String u = p.getUnicode();
+                          if (u == null || u.length() == 0) continue;
+                          pageGlyphs.add(new Glyph(
+                                  u,
+                                  p.getXDirAdj(),
+                                  p.getYDirAdj(),
+                                  p.getWidthDirAdj(),
+                                  p.getHeightDir()));
+                      }
+                      super.writeString(text, positions);
+                  }
+
+                  @Override
+                  protected void endPage(
+                          com.tom_roush.pdfbox.pdmodel.PDPage page)
+                          throws java.io.IOException {
+                      makeLines();
+                      super.endPage(page);
+                  }
+
+                  private void makeLines() {
+                      Collections.sort(pageGlyphs, (a,b) -> {
+                          int cy = Float.compare(a.y, b.y);
+                          return cy != 0 ? cy : Float.compare(a.x, b.x);
+                      });
+
+                      List<Line> pageLines = new ArrayList<>();
+                      for (Glyph g : pageGlyphs) {
+                          Line best = null;
+                          float tolerance = Math.max(2.5f, g.h * 0.55f);
+                          for (Line l : pageLines) {
+                              if (Math.abs(l.y - g.y) <= tolerance) {
+                                  best = l;
+                                  break;
+                              }
+                          }
+                          if (best == null) {
+                              best = new Line();
+                              best.page = currentPage;
+                              best.y = g.y;
+                              best.x0 = g.x;
+                              best.x1 = g.x + g.w;
+                              best.h = g.h;
+                              pageLines.add(best);
+                          }
+                          best.glyphs.add(g);
+                          best.x0 = Math.min(best.x0, g.x);
+                          best.x1 = Math.max(best.x1, g.x + g.w);
+                          best.h = Math.max(best.h, g.h);
+                      }
+
+                      for (Line l : pageLines) {
+                          Collections.sort(l.glyphs, Comparator.comparingDouble(a -> a.x));
+                          l.y = averageY(l.glyphs);
+                      }
+                      pageLines.sort(Comparator.comparingDouble(a -> a.y));
+                      lines.addAll(pageLines);
+                  }
+
+                  private float averageY(List<Glyph> g) {
+                      float s = 0;
+                      for (Glyph x : g) s += x.y;
+                      return g.isEmpty() ? 0 : s / g.size();
+                  }
+              }
+
+              static Result reconstruct(InputStream input) throws Exception {
+                  PDFBoxResourceLoader.init(null);
+                  PDDocument doc = PDDocument.load(input);
+                  Collector c = new Collector();
+                  c.setStartPage(1);
+                  c.setEndPage(doc.getNumberOfPages());
+                  c.getText(doc);
+
+                  List<Line> raw = c.lines;
+                  Set<String> furniture = detectRepeatedFurniture(raw, doc.getNumberOfPages());
+                  List<Line> clean = new ArrayList<>();
+
+                  for (Line l : raw) {
+                      String t = normalize(l.text());
+                      if (t.isEmpty()) continue;
+                      if (furniture.contains(t)) continue;
+                      if (isPageNumber(t)) continue;
+                      clean.add(l);
+                  }
+
+                  List<Block> blocks = makeBlocks(clean);
+                  inferKinds(blocks);
+                  inferTables(blocks);
+                  List<Block> ordered = orderBlocks(blocks);
+
+                  byte[] epub = buildEpub(ordered);
+
+                  int tables = 0, captions = 0, headings = 0;
+                  for (Block b : ordered) {
+                      if (b.kind == Kind.TABLE) tables++;
+                      if (b.kind == Kind.CAPTION) captions++;
+                      if (b.kind == Kind.HEADING) headings++;
+                  }
+
+                  StringBuilder report = new StringBuilder();
+                  report.append("V0.13 — Region–Relationship Reconstruction Engine\n\n");
+                  report.append("Pages: ").append(doc.getNumberOfPages()).append('\n');
+                  report.append("Raw physical lines: ").append(raw.size()).append('\n');
+                  report.append("Clean physical lines: ").append(clean.size()).append('\n');
+                  report.append("Structural regions: ").append(ordered.size()).append('\n');
+                  report.append("Tables reconstructed: ").append(tables).append('\n');
+                  report.append("Captions preserved: ").append(captions).append('\n');
+                  report.append("Headings detected: ").append(headings).append('\n');
+                  report.append("Running furniture removed: ").append(furniture.size()).append('\n');
+                  report.append("\nREADING ORDER\n");
+                  int n = 1;
+                  for (Block b : ordered) {
+                      String t = b.kind == Kind.TABLE
+                              ? "[table region — text not altered]"
+                              : b.text();
+                      if (t.length() > 140) t = t.substring(0, 140) + "…";
+                      report.append(n++).append(". ").append(t).append('\n');
+                  }
+
+                  doc.close();
+                  return new Result(epub, report.toString());
+              }
+
+              private static List<Block> makeBlocks(List<Line> lines) {
+                  List<Block> out = new ArrayList<>();
+                  Block current = null;
+
+                  for (Line l : lines) {
+                      String t = normalize(l.text());
+                      if (t.isEmpty()) continue;
+
+                      boolean newBlock = current == null;
+                      if (!newBlock) {
+                          Line prev = current.lines.get(current.lines.size() - 1);
+                          float gap = l.y - prev.y;
+                          float lineH = Math.max(8, Math.max(prev.h, l.h));
+                          boolean pageChanged = l.page != prev.page;
+                          boolean largeGap = gap > lineH * 1.85f;
+                          boolean strongIndentChange =
+                                  Math.abs(l.x0 - prev.x0) > Math.max(24, lineH * 2.5f);
+                          boolean probableHeading = isHeadingCandidate(t, l);
+                          newBlock = pageChanged || largeGap ||
+                                  (strongIndentChange && probableHeading);
+                      }
+
+                      if (newBlock) {
+                          current = new Block();
+                          current.page = l.page;
+                          current.x0 = l.x0;
+                          current.x1 = l.x1;
+                          current.y0 = l.y;
+                          current.y1 = l.y + l.h;
+                          out.add(current);
+                      }
+
+                      current.lines.add(l);
+                      current.x0 = Math.min(current.x0, l.x0);
+                      current.x1 = Math.max(current.x1, l.x1);
+                      current.y1 = l.y + l.h;
+                  }
+                  return out;
+              }
+
+              private static void inferKinds(List<Block> blocks) {
+                  for (int i = 0; i < blocks.size(); i++) {
+                      Block b = blocks.get(i);
+                      String t = b.text();
+
+                      if (t.isEmpty()) {
+                          b.kind = Kind.BODY;
+                          continue;
+                      }
+                      if (isFigureCaption(t)) b.kind = Kind.CAPTION;
+                      else if (isLicense(t)) b.kind = Kind.LICENSE;
+                      else if (isSourceNote(t)) b.kind = Kind.SOURCE_NOTE;
+                      else if (isListItem(t)) b.kind = Kind.LIST_ITEM;
+                      else if (i == 0 && t.length() < 180) b.kind = Kind.TITLE;
+                      else if (isAuthorBlock(t)) b.kind = Kind.AUTHOR;
+                      else if (isHeadingCandidate(t, b.lines.get(0))) b.kind = Kind.HEADING;
+                      else b.kind = Kind.BODY;
+                  }
+              }
+
+              private static void inferTables(List<Block> blocks) {
+                  /*
+                   * V0.13 rule:
+                   * TABLE-LIKE is a REGION RELATIONSHIP, never a text token.
+                   * A table is formed only when multiple neighbouring blocks/lines
+                   * show repeated short left/right units with stable x positions.
+                   */
+                  for (int i = 0; i < blocks.size(); i++) {
+                      if (blocks.get(i).kind != Kind.BODY) continue;
+
+                      int j = i;
+                      List<Line> candidate = new ArrayList<>();
+                      while (j < blocks.size()) {
+                          Block b = blocks.get(j);
+                          if (b.kind != Kind.BODY || b.lines.size() != 1) break;
+                          Line l = b.lines.get(0);
+                          if (!hasTwoSpatialUnits(l)) break;
+                          candidate.add(l);
+                          j++;
+                          if (candidate.size() >= 12) break;
+                      }
+
+                      if (candidate.size() < 3) continue;
+
+                      List<List<String>> rows = new ArrayList<>();
+                      boolean stable = true;
+                      Float split = null;
+
+                      for (Line l : candidate) {
+                          float s = tableSplit(l);
+                          if (split == null) split = s;
+                          else if (Math.abs(s - split) > 22) {
+                              stable = false;
+                              break;
+                          }
+                          String left = unitText(l, true, s);
+                          String right = unitText(l, false, s);
+                          if (left.isEmpty() || right.isEmpty()) {
+                              stable = false;
+                              break;
+                          }
+                          rows.add(asRow(left, right));
+                      }
+
+                      if (!stable) continue;
+
+                      Block table = new Block();
+                      table.page = blocks.get(i).page;
+                      table.kind = Kind.TABLE;
+                      table.lines.addAll(candidate);
+                      table.tableRows = rows;
+                      table.x0 = candidate.get(0).x0;
+                      table.x1 = candidate.get(0).x1;
+                      table.y0 = candidate.get(0).y;
+                      table.y1 = candidate.get(candidate.size() - 1).y +
+                              candidate.get(candidate.size() - 1).h;
+
+                      for (int k = i; k < j; k++) blocks.set(k, null);
+                      blocks.add(i, table);
+                      for (int k = 1; k <= candidate.size(); k++) {
+                          int idx = i + k;
+                          if (idx < blocks.size()) blocks.set(idx, null);
+                      }
+                      blocks.removeIf(x -> x == null);
+                      i++;
+                  }
+              }
+
+              private static List<String> asRow(String a, String b) {
+                  List<String> r = new ArrayList<>();
+                  r.add(a);
+                  r.add(b);
+                  return r;
+              }
+
+              private static boolean hasTwoSpatialUnits(Line l) {
+                  if (l.glyphs.size() < 5) return false;
+                  float split = tableSplit(l);
+                  if (split <= l.x0 || split >= l.x1) return false;
+                  String a = unitText(l, true, split);
+                  String b = unitText(l, false, split);
+                  return a.length() >= 2 && b.length() >= 2 &&
+                          a.length() <= 70 && b.length() <= 70;
+              }
+
+              private static float tableSplit(Line l) {
+                  List<Glyph> g = l.glyphs;
+                  float bestGap = 0, bestX = -1;
+                  float medianW = medianGlyphWidth(g);
+                  for (int i = 0; i + 1 < g.size(); i++) {
+                      Glyph a = g.get(i), b = g.get(i + 1);
+                      float gap = b.x - (a.x + a.w);
+                      if (gap > bestGap && gap > Math.max(16, medianW * 3.0f)) {
+                          bestGap = gap;
+                          bestX = (a.x + a.w + b.x) / 2f;
+                      }
+                  }
+                  return bestX;
+              }
+
+              private static String unitText(Line l, boolean left, float split) {
+                  List<Glyph> g = new ArrayList<>();
+                  for (Glyph x : l.glyphs) {
+                      boolean in = left ? x.x < split : x.x >= split;
+                      if (in) g.add(x);
+                  }
+                  return normalize(buildText(g));
+              }
+
+              private static float medianGlyphWidth(List<Glyph> g) {
+                  List<Float> v = new ArrayList<>();
+                  for (Glyph x : g) if (x.w > 0) v.add(x.w);
+                  if (v.isEmpty()) return 5;
+                  Collections.sort(v);
+                  return v.get(v.size() / 2);
+              }
+
+              private static List<Block> orderBlocks(List<Block> blocks) {
+                  /*
+                   * Region graph, not raw x-coordinate sorting.
+                   * Within each page, dominant horizontal regions are read top-down.
+                   * If a page exhibits two stable text bands, each band is completed
+                   * before moving to the next. A region spanning both bands stays first
+                   * at its vertical position.
+                   */
+                  List<Block> out = new ArrayList<>(blocks);
+                  out.sort((a,b) -> {
+                      int p = Integer.compare(a.page, b.page);
+                      if (p != 0) return p;
+                      int y = Float.compare(a.y0, b.y0);
+                      if (y != 0) return y;
+                      return Float.compare(a.x0, b.x0);
+                  });
+
+                  // Relationship corrections: captions follow their nearest figure/text
+                  // region; source notes stay after their associated body/caption region.
+                  for (int i = 1; i < out.size(); i++) {
+                      Block b = out.get(i);
+                      if (b.kind != Kind.CAPTION && b.kind != Kind.SOURCE_NOTE) continue;
+                      int best = i - 1;
+                      if (out.get(best).kind == Kind.TABLE) continue;
+                      Block prev = out.get(best);
+                      if (b.page == prev.page &&
+                          b.y0 >= prev.y0 &&
+                          b.y0 - prev.y1 < 90) {
+                          out.remove(i);
+                          out.add(best + 1, b);
+                      }
+                  }
+                  return out;
+              }
+
+              private static byte[] buildEpub(List<Block> blocks) throws Exception {
+                  StringBuilder body = new StringBuilder();
+                  Set<String> usedIds = new HashSet<>();
+
+                  for (Block b : blocks) {
+                      if (b.kind == Kind.TABLE && b.tableRows != null) {
+                          body.append("<table class=\"reconstructed-table\"><tbody>");
+                          for (List<String> row : b.tableRows) {
+                              body.append("<tr><td>")
+                                      .append(esc(row.get(0)))
+                                      .append("</td><td>")
+                                      .append(esc(row.get(1)))
+                                      .append("</td></tr>");
+                          }
+                          body.append("</tbody></table>");
+                          continue;
+                      }
+
+                      String t = esc(b.text());
+                      if (t.isEmpty()) continue;
+
+                      switch (b.kind) {
+                          case TITLE:
+                              body.append("<h1>").append(t).append("</h1>");
+                              break;
+                          case HEADING:
+                              body.append("<h2>").append(t).append("</h2>");
+                              break;
+                          case AUTHOR:
+                              body.append("<div class=\"frontmatter\">")
+                                      .append(t).append("</div>");
+                              break;
+                          case CAPTION:
+                              body.append("<figure><figcaption>")
+                                      .append(t).append("</figcaption></figure>");
+                              break;
+                          case LIST_ITEM:
+                              body.append("<ul><li>").append(t).append("</li></ul>");
+                              break;
+                          case LICENSE:
+                          case SOURCE_NOTE:
+                              body.append("<aside>").append(t).append("</aside>");
+                              break;
+                          default:
+                              body.append("<p>").append(t).append("</p>");
+                              break;
+                      }
+                  }
+
+                  String xhtml =
+                      "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                      + "<!DOCTYPE html>"
+                      + "<html xmlns=\"http://www.w3.org/1999/xhtml\">"
+                      + "<head><meta charset=\"utf-8\"/>"
+                      + "<title>Reconstructed PDF</title>"
+                      + "<style>"
+                      + "body{font-family:sans-serif;line-height:1.55;margin:6%;}"
+                      + "h1{font-size:1.55em;line-height:1.2;}"
+                      + "h2{font-size:1.2em;margin-top:1.4em;}"
+                      + "p{margin:0 0 .9em;}"
+                      + ".frontmatter{margin:.25em 0;}"
+                      + "aside{font-size:.9em;margin:1em 0;padding:.5em;}"
+                      + "figure{margin:1em 0;}figcaption{font-size:.9em;}"
+                      + "table{border-collapse:collapse;width:100%;margin:1em 0;}"
+                      + "td{border:1px solid #999;padding:.45em;vertical-align:top;}"
+                      + "</style></head><body>"
+                      + body
+                      + "</body></html>";
+
+                  String nav =
+                      "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                      + "<!DOCTYPE html>"
+                      + "<html xmlns=\"http://www.w3.org/1999/xhtml\" "
+                      + "xmlns:epub=\"http://www.idpf.org/2007/ops\"><head>"
+                      + "<title>Navigation</title></head><body>"
+                      + "<nav epub:type=\"toc\" id=\"toc\"><ol>"
+                      + "<li><a href=\"text.xhtml\">Reconstructed document</a></li>"
+                      + "</ol></nav></body></html>";
+
+                  String opf =
+                      "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                      + "<package xmlns=\"http://www.idpf.org/2007/opf\" "
+                      + "version=\"3.0\" unique-identifier=\"bookid\">"
+                      + "<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+                      + "<dc:identifier id=\"bookid\">v013-reconstruction</dc:identifier>"
+                      + "<dc:title>Reconstructed PDF</dc:title>"
+                      + "<dc:language>en</dc:language></metadata>"
+                      + "<manifest>"
+                      + "<item id=\"text\" href=\"text.xhtml\" media-type=\"application/xhtml+xml\"/>"
+                      + "<item id=\"nav\" href=\"nav.xhtml\" properties=\"nav\" "
+                      + "media-type=\"application/xhtml+xml\"/>"
+                      + "</manifest><spine><itemref idref=\"text\"/></spine></package>";
+
+                  ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                  ZipOutputStream z = new ZipOutputStream(baos);
+
+                  ZipEntry mimetype = new ZipEntry("mimetype");
+                  z.putNextEntry(mimetype);
+                  z.write("application/epub+zip".getBytes(StandardCharsets.US_ASCII));
+                  z.closeEntry();
+
+                  put(z, "META-INF/container.xml",
+                      "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                      + "<container version=\"1.0\" "
+                      + "xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\">"
+                      + "<rootfiles><rootfile full-path=\"OEBPS/content.opf\" "
+                      + "media-type=\"application/oebps-package+xml\"/>"
+                      + "</rootfiles></container>");
+
+                  put(z, "OEBPS/content.opf", opf);
+                  put(z, "OEBPS/text.xhtml", xhtml);
+                  put(z, "OEBPS/nav.xhtml", nav);
+                  z.finish();
+                  z.close();
+                  return baos.toByteArray();
+              }
+
+              private static void put(ZipOutputStream z, String name, String text)
+                      throws Exception {
+                  z.putNextEntry(new ZipEntry(name));
+                  z.write(text.getBytes(StandardCharsets.UTF_8));
+                  z.closeEntry();
+              }
+
+              private static Set<String> detectRepeatedFurniture(
+                      List<Line> lines, int pages) {
+                  Map<String, Set<Integer>> seen = new HashMap<>();
+                  for (Line l : lines) {
+                      String t = normalize(l.text());
+                      if (t.length() < 2 || t.length() > 100) continue;
+                      if (l.y < 90 || l.y > 650) {
+                          seen.computeIfAbsent(t, k -> new HashSet<>()).add(l.page);
+                      }
+                  }
+                  Set<String> result = new HashSet<>();
+                  for (Map.Entry<String, Set<Integer>> e : seen.entrySet()) {
+                      if (e.getValue().size() >= Math.min(3, Math.max(2, pages / 4)))
+                          result.add(e.getKey());
+                  }
+                  return result;
+              }
+
+              private static boolean isPageNumber(String t) {
+                  return t.matches("[-–—]?\\s*\\d+\\s*[-–—]?") ||
+                         t.matches("Page\\s+\\d+") ||
+                         t.matches("\\d+\\s*/\\s*\\d+");
+              }
+
+              private static boolean isFigureCaption(String t) {
+                  return t.matches("(?i)^(figure|fig\\.?|table)\\s+\\d+[a-z]?[\\.:,\\s].*")
+                      || t.matches("(?i)^(figure|fig\\.?|table)\\s+[0-9]+.*");
+              }
+
+              private static boolean isLicense(String t) {
+                  String x = t.toLowerCase();
+                  return x.contains("license") || x.contains("creative commons")
+                      || x.contains("copyright");
+              }
+
+              private static boolean isSourceNote(String t) {
+                  String x = t.toLowerCase();
+                  return x.startsWith("source:") || x.startsWith("sources:")
+                      || x.startsWith("images courtesy")
+                      || x.startsWith("repository citation");
+              }
+
+              private static boolean isListItem(String t) {
+                  return t.matches("^\\s*(\\d+\\.|[A-Za-z][\\.)]|[-•▪◦])\\s+.+");
+              }
+
+              private static boolean isAuthorBlock(String t) {
+                  return t.matches("(?i)^(et\\s+al\\.?|[A-Z][A-Za-z'’-]+(\\s+[A-Z][A-Za-z'’-]+){1,4})$")
+                      || t.matches(".*\\b(MD|PhD|DO|RN|Professor|Dr\\.)\\b.*");
+              }
+
+              private static boolean isHeadingCandidate(String t, Line l) {
+                  if (t.length() > 120) return false;
+                  if (t.matches(".*[.!?]$") && t.length() > 45) return false;
+                  int letters = 0, upper = 0;
+                  for (int i = 0; i < t.length(); i++) {
+                      char c = t.charAt(i);
+                      if (Character.isLetter(c)) {
+                          letters++;
+                          if (Character.isUpperCase(c)) upper++;
+                      }
+                  }
+                  boolean titleCase = letters > 0 && upper >= Math.max(1, letters / 4);
+                  return t.length() < 80 && (titleCase || l.h >= 15);
+              }
+
+              private static String buildText(List<Glyph> glyphs) {
+                  if (glyphs.isEmpty()) return "";
+                  StringBuilder b = new StringBuilder();
+                  Glyph prev = null;
+                  float median = medianGlyphWidth(glyphs);
+
+                  for (Glyph g : glyphs) {
+                      String u = g.text == null ? "" : g.text;
+                      if (u.isEmpty()) continue;
+
+                      if (prev != null) {
+                          float gap = g.x - (prev.x + prev.w);
+                          if (gap > Math.max(1.5f, median * 0.55f)
+                                  && !Character.isWhitespace(lastChar(b))
+                                  && !Character.isWhitespace(firstChar(u))) {
+                              b.append(' ');
+                          }
+                      }
+                      b.append(u);
+                      prev = g;
+                  }
+                  return normalize(b.toString());
+              }
+
+              private static char lastChar(StringBuilder b) {
+                  return b.length() == 0 ? ' ' : b.charAt(b.length() - 1);
+              }
+
+              private static char firstChar(String s) {
+                  return s.isEmpty() ? ' ' : s.charAt(0);
+              }
+
+              private static String normalize(String s) {
+                  if (s == null) return "";
+                  return s.replace('\u00a0', ' ')
+                          .replaceAll("\\s+", " ")
+                          .trim();
+              }
+
+              private static String esc(String s) {
+                  return s.replace("&", "&amp;")
+                          .replace("<", "&lt;")
+                          .replace(">", "&gt;")
+                          .replace("\"", "&quot;");
+              }
+          }
+          EOF
+
+      - name: Build APK
+        working-directory: project
+        run: gradle --no-daemon assembleDebug
+
+      - name: Upload V0.13 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartPDFReader-V0.13-debug
+          path: project/app/build/outputs/apk/debug/app-debug.apk
