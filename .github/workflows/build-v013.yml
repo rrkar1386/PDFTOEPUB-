@@ -1,0 +1,277 @@
+name: Build Smart PDF Reader V0.13
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # --------------------------------------------------
+      # 1. CHECKOUT
+      # --------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --------------------------------------------------
+      # 2. JAVA 17
+      # --------------------------------------------------
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # --------------------------------------------------
+      # 3. FIND THE PROJECT ZIP
+      # --------------------------------------------------
+      - name: Find project ZIP
+        shell: bash
+        run: |
+          set -e
+
+          echo "Files in repository:"
+          find . -maxdepth 2 -type f -print | sort
+
+          ZIP_COUNT=$(find . -maxdepth 1 -type f -iname "*.zip" | wc -l)
+
+          if [ "$ZIP_COUNT" -eq 0 ]; then
+            echo "::error::No ZIP file found in repository root."
+            echo "Upload the Smart PDF Reader project ZIP to the repository root."
+            exit 1
+          fi
+
+          if [ "$ZIP_COUNT" -gt 1 ]; then
+            echo "::error::More than one ZIP file found."
+            echo "Keep only the intended V0.13 project ZIP in the repository root."
+            find . -maxdepth 1 -type f -iname "*.zip" -print
+            exit 1
+          fi
+
+          ZIP_FILE=$(find . -maxdepth 1 -type f -iname "*.zip" -print -quit)
+
+          echo "Using ZIP:"
+          echo "$ZIP_FILE"
+
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+
+      # --------------------------------------------------
+      # 4. EXTRACT ZIP
+      # --------------------------------------------------
+      - name: Extract project ZIP
+        shell: bash
+        run: |
+          set -e
+
+          rm -rf extracted
+          mkdir -p extracted
+
+          echo "Extracting:"
+          echo "$ZIP_FILE"
+
+          unzip -q "$ZIP_FILE" -d extracted
+
+          echo
+          echo "Extracted structure:"
+          find extracted -maxdepth 4 -print | sort | head -300
+
+      # --------------------------------------------------
+      # 5. LOCATE ACTUAL ANDROID PROJECT
+      # --------------------------------------------------
+      - name: Locate Android project
+        shell: bash
+        run: |
+          set -e
+
+          echo "Searching for Android project..."
+
+          PROJECT_DIR=""
+
+          # First look for settings.gradle / settings.gradle.kts
+          while IFS= read -r file; do
+            DIR=$(dirname "$file")
+
+            if [ -d "$DIR/app" ]; then
+              PROJECT_DIR="$DIR"
+              break
+            fi
+          done < <(
+            find extracted \
+              -type f \
+              \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+              -print
+          )
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "::error::Could not find a valid Android project inside the ZIP."
+            echo
+            echo "The ZIP must contain an Android project with:"
+            echo "  settings.gradle OR settings.gradle.kts"
+            echo "  app/"
+            echo
+            echo "Actual extracted files:"
+            find extracted -maxdepth 5 -print | sort
+            exit 1
+          fi
+
+          echo "Android project found at:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      # --------------------------------------------------
+      # 6. VERIFY PROJECT BEFORE BUILDING
+      # --------------------------------------------------
+      - name: Verify Android project
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          echo "Project directory:"
+          pwd
+
+          echo
+          echo "Project contents:"
+          find . -maxdepth 3 -type f -print | sort
+
+          echo
+          echo "Checking required files..."
+
+          if [ ! -d "app" ]; then
+            echo "::error::app directory is missing."
+            exit 1
+          fi
+
+          if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
+            echo "::error::settings.gradle or settings.gradle.kts is missing."
+            exit 1
+          fi
+
+          if [ ! -f "build.gradle" ] && [ ! -f "build.gradle.kts" ]; then
+            echo "::error::Root build.gradle or build.gradle.kts is missing."
+            exit 1
+          fi
+
+          echo "Android project structure verified."
+
+      # --------------------------------------------------
+      # 7. USE GRADLE WRAPPER IF PRESENT
+      # --------------------------------------------------
+      - name: Prepare Gradle
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          if [ -f "./gradlew" ]; then
+            echo "Gradle Wrapper found."
+            chmod +x ./gradlew
+            echo "GRADLE_COMMAND=./gradlew" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Gradle Wrapper not found."
+            echo "Using installed Gradle 8.9."
+            echo "GRADLE_COMMAND=gradle" >> "$GITHUB_ENV"
+          fi
+
+      # --------------------------------------------------
+      # 8. SET UP GRADLE
+      # --------------------------------------------------
+      - name: Set up Gradle
+        if: env.GRADLE_COMMAND == 'gradle'
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      # --------------------------------------------------
+      # 9. BUILD DEBUG APK
+      # --------------------------------------------------
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          echo "Gradle command:"
+          echo "$GRADLE_COMMAND"
+
+          "$GRADLE_COMMAND" --version
+
+          echo
+          echo "Building debug APK..."
+
+          "$GRADLE_COMMAND" --no-daemon --stacktrace assembleDebug
+
+      # --------------------------------------------------
+      # 10. FIND APK
+      # --------------------------------------------------
+      - name: Find generated APK
+        shell: bash
+        run: |
+          set -e
+
+          echo "Searching for APK..."
+
+          find "$PROJECT_DIR" \
+            -type f \
+            -name "*.apk" \
+            -print
+
+          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
+            -type f \
+            -name "*.apk" \
+            -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "::error::No debug APK was generated."
+            echo
+            echo "APK output directory:"
+            find "$PROJECT_DIR/app/build" \
+              -maxdepth 6 \
+              -type f \
+              -print 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "APK found:"
+          echo "$APK"
+
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+
+      # --------------------------------------------------
+      # 11. COPY APK TO SIMPLE LOCATION
+      # --------------------------------------------------
+      - name: Prepare APK artifact
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p release
+
+          cp "$APK_PATH" \
+            "release/Smart-PDF-Reader-V0.13-debug.apk"
+
+          ls -lh release/
+
+      # --------------------------------------------------
+      # 12. UPLOAD APK
+      # --------------------------------------------------
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Smart-PDF-Reader-V0.13-debug
+          path: release/Smart-PDF-Reader-V0.13-debug.apk
+          if-no-files-found: error
+          retention-days: 14
