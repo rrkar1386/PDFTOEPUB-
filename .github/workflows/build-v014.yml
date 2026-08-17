@@ -1,0 +1,57 @@
+name: Build Android APK V0.14
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'PdfToEpub_V0.14_SPATIAL_RELATIONSHIP_RECONSTRUCTION.zip'
+      - '.github/workflows/build-v014.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Extract V0.14 project
+        run: |
+          rm -rf v014
+          mkdir v014
+          unzip -q PdfToEpub_V0.14_SPATIAL_RELATIONSHIP_RECONSTRUCTION.zip -d v014
+
+      - name: Verify V0.14 project
+        run: |
+          test -f v014/settings.gradle
+          test -f v014/build.gradle
+          test -f v014/app/build.gradle
+          test -f v014/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+          echo "V0.14 project structure verified."
+
+      - name: Build V0.14 APK
+        working-directory: v014
+        run: gradle clean assembleDebug --no-daemon
+
+      - name: Verify APK
+        run: |
+          find v014/app/build/outputs/apk/debug -name "*.apk" -type f -print
+          test -n "$(find v014/app/build/outputs/apk/debug -name '*.apk' -type f -print -quit)"
+
+      - name: Upload V0.14 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PDFToEPUB-V0.14-debug
+          path: v014/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
