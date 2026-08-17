@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -20,22 +20,25 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
+      - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      # ------------------------------------------------------------
-      # CREATE V0.13 ANDROID PROJECT
-      # ------------------------------------------------------------
+      # ============================================================
+      # CREATE A CLEAN V0.13 ANDROID PROJECT
+      # ============================================================
 
-      - name: Create V0.13 project
+      - name: Create V0.13 Android project
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
+
+          echo "Creating clean V0.13 project..."
 
           rm -rf project
-          mkdir -p project
+          mkdir -p project/app/src/main/java/com/pdftoepub/v013
+          mkdir -p project/app/src/main/res/values
 
           cd project
 
@@ -56,32 +59,36 @@ jobs:
               }
           }
 
-          rootProject.name = "PdfToEpubV013"
+          rootProject.name = "Smart-PDF-Reader-V0.13"
           include(":app")
           EOF
 
           cat > build.gradle <<'EOF'
           plugins {
               id 'com.android.application' version '8.7.3' apply false
+              id 'org.jetbrains.kotlin.android' version '2.0.21' apply false
           }
           EOF
 
-          mkdir -p app/src/main/java/com/pdf2epub/v013
-          mkdir -p app/src/main/res/layout
-          mkdir -p app/src/main/res/values
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          EOF
 
           cat > app/build.gradle <<'EOF'
           plugins {
               id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
           }
 
           android {
-              namespace 'com.pdf2epub.v013'
+              namespace 'com.pdftoepub.v013'
               compileSdk 35
 
               defaultConfig {
-                  applicationId 'com.pdf2epub.v013'
-                  minSdk 23
+                  applicationId 'com.pdftoepub.v013'
+                  minSdk 26
                   targetSdk 35
                   versionCode 13
                   versionName '0.13'
@@ -91,32 +98,18 @@ jobs:
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
               }
+
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
           }
 
           dependencies {
+              implementation 'androidx.core:core-ktx:1.15.0'
+              implementation 'androidx.appcompat:appcompat:1.7.0'
+              implementation 'com.google.android.material:material:1.12.0'
               implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
           }
-          EOF
-
-          cat > app/src/main/res/values/colors.xml <<'EOF'
-          <resources>
-              <color name="black">#101014</color>
-              <color name="white">#FFFFFF</color>
-              <color name="gray">#666666</color>
-          </resources>
-          EOF
-
-          cat > app/src/main/res/values/themes.xml <<'EOF'
-          <resources>
-              <style name="AppTheme"
-                  parent="@android:style/Theme.Material.NoActionBar">
-                  <item name="android:fontFamily">sans</item>
-                  <item name="android:colorAccent">#888888</item>
-                  <item name="android:navigationBarColor">#101014</item>
-                  <item name="android:statusBarColor">#101014</item>
-                  <item name="android:windowLightStatusBar">false</item>
-              </style>
-          </resources>
           EOF
 
           cat > app/src/main/AndroidManifest.xml <<'EOF'
@@ -125,11 +118,12 @@ jobs:
 
               <application
                   android:theme="@style/AppTheme"
-                  android:label="PDF → EPUB V0.13">
+                  android:label="PDF to EPUB V0.13"
+                  android:allowBackup="true"
+                  android:supportsRtl="true">
 
                   <activity
                       android:name=".MainActivity"
-                      android:screenOrientation="portrait"
                       android:exported="true">
 
                       <intent-filter>
@@ -144,471 +138,515 @@ jobs:
           </manifest>
           EOF
 
-          cat > app/src/main/res/layout/activity_main.xml <<'EOF'
+          cat > app/src/main/res/values/styles.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
-          <ScrollView
-              xmlns:android="http://schemas.android.com/apk/res/android"
-              android:layout_width="match_parent"
-              android:layout_height="match_parent"
-              android:background="#101014">
+          <resources>
 
-              <LinearLayout
-                  android:layout_width="match_parent"
-                  android:layout_height="wrap_content"
-                  android:orientation="vertical"
-                  android:padding="10dp">
+              <style
+                  name="AppTheme"
+                  parent="Theme.Material3.DayNight.NoActionBar">
 
-                  <TextView
-                      android:layout_width="match_parent"
-                      android:layout_height="wrap_content"
-                      android:text="PDF → EPUB&#10;V0.13 — Structural Repair Engine"
-                      android:textColor="#EEEEEE"
-                      android:textSize="34sp"
-                      android:paddingBottom="16dp"/>
+                  <item name="android:fontFamily">sans</item>
 
-                  <Button
-                      android:id="@+id/selectPdf"
-                      android:layout_width="match_parent"
-                      android:layout_height="60dp"
-                      android:text="SELECT PDF"
-                      android:textSize="20sp"/>
+              </style>
 
-                  <Button
-                      android:id="@+id/analyze"
-                      android:layout_width="match_parent"
-                      android:layout_height="60dp"
-                      android:layout_marginTop="12dp"
-                      android:text="ANALYZE + RECONSTRUCT"
-                      android:textSize="20sp"/>
-
-                  <TextView
-                      android:id="@+id/status"
-                      android:layout_width="match_parent"
-                      android:layout_height="wrap_content"
-                      android:textColor="#DDDDDD"
-                      android:textSize="17sp"
-                      android:paddingTop="18dp"/>
-
-                  <TextView
-                      android:id="@+id/output"
-                      android:layout_width="match_parent"
-                      android:layout_height="wrap_content"
-                      android:textColor="#DDDDDD"
-                      android:textSize="18sp"
-                      android:paddingTop="20dp"/>
-
-              </LinearLayout>
-          </ScrollView>
+          </resources>
           EOF
 
-          cat > app/src/main/java/com/pdf2epub/v013/MainActivity.java <<'EOF'
-          package com.pdf2epub.v013;
+          cat > app/src/main/java/com/pdftoepub/v013/MainActivity.kt <<'EOF'
+          package com.pdftoepub.v013
 
-          import android.app.Activity;
-          import android.os.Bundle;
-          import android.content.Intent;
-          import android.net.Uri;
-          import android.provider.Settings;
-          import android.view.View;
-          import android.widget.Button;
-          import android.widget.TextView;
+          import android.app.Activity
+          import android.content.Intent
+          import android.net.Uri
+          import android.os.Bundle
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.TextView
+          import androidx.appcompat.app.AppCompatActivity
+          import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+          import com.tom_roush.pdfbox.pdmodel.PDDocument
+          import com.tom_roush.pdfbox.text.PDFTextStripper
+          import java.util.Locale
 
-          import com.tom_roush.pdfbox.android.PDFBoxResourceLoader;
-          import com.tom_roush.pdfbox.pdmodel.PDDocument;
-          import com.tom_roush.pdfbox.text.PDFTextStripper;
+          class MainActivity : AppCompatActivity() {
 
-          import java.io.InputStream;
-          import java.util.ArrayList;
-          import java.util.Collections;
-          import java.util.Comparator;
-          import java.util.HashSet;
-          import java.util.List;
-          import java.util.Set;
+              private lateinit var output: TextView
 
-          public class MainActivity extends Activity {
+              private var selectedUri: Uri? = null
 
-              private static final int PICK_PDF = 1001;
-
-              private Uri selectedPdf;
-
-              private TextView status;
-              private TextView output;
-
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-
-                  PDFBoxResourceLoader.init(getApplicationContext());
-
-                  setContentView(R.layout.activity_main);
-
-                  Button selectPdf = findViewById(R.id.selectPdf);
-                  Button analyze = findViewById(R.id.analyze);
-
-                  status = findViewById(R.id.status);
-                  output = findViewById(R.id.output);
-
-                  selectPdf.setOnClickListener(v -> choosePdf());
-
-                  analyze.setOnClickListener(v -> {
-                      if (selectedPdf == null) {
-                          status.setText("Please select a PDF first.");
-                          return;
-                      }
-
-                      analyzePdf();
-                  });
-
-                  status.setText("Ready.");
+              companion object {
+                  private const val REQUEST_PDF = 100
               }
 
-              private void choosePdf() {
-                  Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                  intent.setType("application/pdf");
-                  intent.addCategory(Intent.CATEGORY_OPENABLE);
-                  startActivityForResult(intent, PICK_PDF);
-              }
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
 
-              @Override
-              protected void onActivityResult(
-                      int requestCode,
-                      int resultCode,
-                      Intent data) {
+                  PDFBoxResourceLoader.init(applicationContext)
 
-                  super.onActivityResult(requestCode, resultCode, data);
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(18, 18, 18, 18)
+                  }
 
-                  if (requestCode == PICK_PDF &&
-                          resultCode == RESULT_OK &&
-                          data != null &&
-                          data.getData() != null) {
+                  val title = TextView(this).apply {
+                      text = "PDF → EPUB\nV0.13 — Region–Relationship Reconstruction Engine"
+                      textSize = 27f
+                      setPadding(0, 0, 0, 20)
+                  }
 
-                      selectedPdf = data.getData();
+                  val selectButton = Button(this).apply {
+                      text = "SELECT PDF"
+                  }
 
-                      try {
-                          getContentResolver().takePersistableUriPermission(
-                                  selectedPdf,
-                                  Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                      } catch (Exception ignored) {
+                  val analyzeButton = Button(this).apply {
+                      text = "ANALYZE + RECONSTRUCT"
+                  }
+
+                  output = TextView(this).apply {
+                      textSize = 16f
+                      setPadding(0, 20, 0, 0)
+                      setTextIsSelectable(true)
+                  }
+
+                  root.addView(title)
+                  root.addView(selectButton)
+                  root.addView(analyzeButton)
+
+                  root.addView(
+                      ScrollView(this).apply {
+                          addView(output)
+                      },
+                      LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          0,
+                          1f
+                      )
+                  )
+
+                  setContentView(root)
+
+                  selectButton.setOnClickListener {
+                      val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                          type = "application/pdf"
+                          addCategory(Intent.CATEGORY_OPENABLE)
+                          addFlags(
+                              Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                              Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                          )
                       }
 
-                      status.setText("PDF selected.\nPress ANALYZE + RECONSTRUCT.");
+                      startActivityForResult(intent, REQUEST_PDF)
+                  }
+
+                  analyzeButton.setOnClickListener {
+                      val uri = selectedUri
+
+                      if (uri == null) {
+                          output.text = "Please select a PDF first."
+                          return@setOnClickListener
+                      }
+
+                      analyzePdf(uri)
                   }
               }
 
-              private void analyzePdf() {
+              override fun onActivityResult(
+                  requestCode: Int,
+                  resultCode: Int,
+                  data: Intent?
+              ) {
+                  super.onActivityResult(requestCode, resultCode, data)
 
-                  status.setText("Analyzing PDF…");
-                  output.setText("");
+                  if (
+                      requestCode == REQUEST_PDF &&
+                      resultCode == Activity.RESULT_OK
+                  ) {
+                      selectedUri = data?.data
 
-                  new Thread(() -> {
+                      selectedUri?.let {
+                          try {
+                              contentResolver.takePersistableUriPermission(
+                                  it,
+                                  Intent.FLAG_GRANT_READ_URI_PERMISSION
+                              )
+                          } catch (_: Exception) {
+                          }
+
+                          output.text =
+                              "Selected PDF:\n$it\n\nPress ANALYZE + RECONSTRUCT."
+                      }
+                  }
+              }
+
+              private fun analyzePdf(uri: Uri) {
+
+                  output.text =
+                      "Running V0.13 spatial reconstruction...\n\n"
+
+                  Thread {
 
                       try {
 
-                          InputStream input =
-                                  getContentResolver().openInputStream(selectedPdf);
+                          val result =
+                              contentResolver.openInputStream(uri)?.use { input ->
+                                  analyzeDocument(input)
+                              } ?: "Could not open PDF."
 
-                          if (input == null) {
-                              throw new Exception("Unable to open PDF.");
+                          runOnUiThread {
+                              output.text = result
                           }
 
-                          PDDocument document = PDDocument.load(input);
+                      } catch (e: Exception) {
 
-                          int pages = document.getNumberOfPages();
-
-                          PDFTextStripper stripper =
-                                  new PDFTextStripper();
-
-                          StringBuilder reconstructed =
-                                  new StringBuilder();
-
-                          int physicalLines = 0;
-                          int structuralBlocks = 0;
-                          int headings = 0;
-                          int captions = 0;
-                          int listItems = 0;
-                          int tableLike = 0;
-
-                          Set<String> seenBlocks =
-                                  new HashSet<>();
-
-                          reconstructed.append(
-                                  "DOCUMENT READING ORDER\n");
-                          reconstructed.append(
-                                  "=======================\n\n");
-
-                          for (int page = 1; page <= pages; page++) {
-
-                              stripper.setStartPage(page);
-                              stripper.setEndPage(page);
-
-                              String text =
-                                      stripper.getText(document);
-
-                              if (text == null) {
-                                  continue;
-                              }
-
-                              String[] lines =
-                                      text.split("\\r?\\n");
-
-                              List<String> pageLines =
-                                      new ArrayList<>();
-
-                              for (String raw : lines) {
-
-                                  String line =
-                                          raw.replace('\u00A0', ' ')
-                                             .trim();
-
-                                  if (line.isEmpty()) {
-                                      continue;
-                                  }
-
-                                  physicalLines++;
-
-                                  if (seenBlocks.add(
-                                          normalize(line))) {
-
-                                      pageLines.add(line);
-                                  }
-                              }
-
-                              for (String line : pageLines) {
-
-                                  String type =
-                                          classify(line);
-
-                                  if ("HEADING".equals(type)) {
-                                      headings++;
-                                  }
-
-                                  if ("FIGURE_CAPTION".equals(type)) {
-                                      captions++;
-                                  }
-
-                                  if ("LIST_ITEM".equals(type)) {
-                                      listItems++;
-                                  }
-
-                                  if ("TABLE_LIKE".equals(type)) {
-                                      tableLike++;
-                                  }
-
-                                  structuralBlocks++;
-
-                                  reconstructed
-                                          .append(line)
-                                          .append("\n");
-                              }
-
-                              reconstructed.append("\n");
+                          runOnUiThread {
+                              output.text =
+                                  "Analysis error:\n" +
+                                  "${e.javaClass.simpleName}: " +
+                                  "${e.message ?: "unknown error"}"
                           }
-
-                          document.close();
-                          input.close();
-
-                          final int finalPhysicalLines =
-                                  physicalLines;
-
-                          final int finalBlocks =
-                                  structuralBlocks;
-
-                          final int finalHeadings =
-                                  headings;
-
-                          final int finalCaptions =
-                                  captions;
-
-                          final int finalLists =
-                                  listItems;
-
-                          final int finalTables =
-                                  tableLike;
-
-                          runOnUiThread(() -> {
-
-                              status.setText(
-                                      "Pages: " + pages +
-                                      "\nAnalyzed pages: " + pages +
-                                      "\nPhysical lines: " +
-                                      finalPhysicalLines +
-                                      "\nStructural blocks: " +
-                                      finalBlocks +
-                                      "\nHeadings: " +
-                                      finalHeadings +
-                                      "\nFigure captions: " +
-                                      finalCaptions +
-                                      "\nList items: " +
-                                      finalLists +
-                                      "\nTable-like blocks: " +
-                                      finalTables +
-                                      "\n\nStructure quality: OK"
-                              );
-
-                              output.setText(
-                                      reconstructed.toString()
-                              );
-                          });
-
-                      } catch (Exception e) {
-
-                          runOnUiThread(() ->
-                                  status.setText(
-                                          "ERROR:\n" +
-                                          e.getClass().getSimpleName() +
-                                          "\n" +
-                                          e.getMessage()
-                                  ));
                       }
 
-                  }).start();
+                  }.start()
               }
 
-              private static String normalize(String s) {
+              /*
+               * V0.13 reconstruction model
+               *
+               * IMPORTANT:
+               *
+               * This version does NOT globally sort every text item by
+               * Y-position and then X-position.
+               *
+               * Instead it keeps page-local physical lines and uses
+               * spatial relationships to determine whether material
+               * belongs to:
+               *
+               *  - normal prose
+               *  - headings
+               *  - captions
+               *  - source/reference material
+               *  - genuine repeated aligned structures
+               *
+               * A single neighbouring pair is never sufficient to turn
+               * ordinary prose into a table.
+               */
 
-                  return s
-                          .replaceAll("\\s+", " ")
-                          .trim()
-                          .toLowerCase();
-              }
+              private fun analyzeDocument(
+                  input: java.io.InputStream
+              ): String {
 
-              private static String classify(String line) {
+                  PDDocument.load(input).use { document ->
 
-                  String lower =
-                          line.toLowerCase();
+                      if (document.numberOfPages == 0) {
+                          return "PDF has no pages."
+                      }
 
-                  if (lower.matches(
-                          "^\\s*(figure|fig\\.?)[ ]*[0-9]+.*")) {
-                      return "FIGURE_CAPTION";
-                  }
+                      val pages = mutableListOf<PageModel>()
 
-                  if (lower.matches(
-                          "^\\s*(table)[ ]*[0-9]+.*")) {
-                      return "TABLE_LIKE";
-                  }
+                      var rawItems = 0
+                      var physicalLines = 0
+                      var duplicateItems = 0
 
-                  if (lower.matches(
-                          "^\\s*([0-9]+[.)]|[-•*]).*")) {
-                      return "LIST_ITEM";
-                  }
+                      for (pageIndex in 0 until document.numberOfPages) {
 
-                  if (looksTableLike(line)) {
-                      return "TABLE_LIKE";
-                  }
+                          val page = document.getPage(pageIndex)
 
-                  if (looksLikeHeading(line)) {
-                      return "HEADING";
-                  }
+                          val stripper =
+                              PDFTextStripper().apply {
+                                  startPage = pageIndex + 1
+                                  endPage = pageIndex + 1
+                                  sortByPosition = true
+                              }
 
-                  return "BODY";
-              }
+                          val text =
+                              stripper.getText(document)
 
-              private static boolean looksLikeHeading(String line) {
+                          val lines =
+                              text.lines()
+                                  .map { it.trim() }
+                                  .filter { it.isNotEmpty() }
 
-                  if (line.length() > 100) {
-                      return false;
-                  }
+                          rawItems += lines.size
+                          physicalLines += lines.size
 
-                  String trimmed =
-                          line.trim();
+                          val cleaned =
+                              removeExactAdjacentDuplicates(lines)
 
-                  if (trimmed.endsWith(".")) {
-                      return false;
-                  }
+                          duplicateItems +=
+                              lines.size - cleaned.size
 
-                  if (trimmed.split("\\s+").length > 12) {
-                      return false;
-                  }
+                          pages.add(
+                              PageModel(
+                                  pageNumber = pageIndex + 1,
+                                  lines = cleaned
+                              )
+                          )
+                      }
 
-                  int letters = 0;
-                  int upper = 0;
-
-                  for (int i = 0; i < trimmed.length(); i++) {
-
-                      char c = trimmed.charAt(i);
-
-                      if (Character.isLetter(c)) {
-                          letters++;
-
-                          if (Character.isUpperCase(c)) {
-                              upper++;
+                      val reconstructed =
+                          pages.flatMap { page ->
+                              reconstructPage(page)
                           }
+
+                      return formatResult(
+                          pageCount = document.numberOfPages,
+                          rawItems = rawItems,
+                          physicalLines = physicalLines,
+                          duplicateItems = duplicateItems,
+                          blocks = reconstructed
+                      )
+                  }
+              }
+
+              /*
+               * Only remove exact adjacent duplicates.
+               *
+               * This deliberately avoids global duplicate removal because
+               * repeated short phrases may be legitimate content on
+               * different pages.
+               */
+
+              private fun removeExactAdjacentDuplicates(
+                  lines: List<String>
+              ): List<String> {
+
+                  if (lines.isEmpty()) return emptyList()
+
+                  val result = mutableListOf<String>()
+
+                  for (line in lines) {
+
+                      if (
+                          result.isEmpty() ||
+                          result.last() != line
+                      ) {
+                          result.add(line)
                       }
                   }
 
-                  if (letters == 0) {
-                      return false;
-                  }
-
-                  return ((double) upper / letters) > 0.65;
+                  return result
               }
 
-              private static boolean looksTableLike(String line) {
+              /*
+               * Region-local reconstruction.
+               *
+               * Normal prose remains normal prose.
+               *
+               * We only identify a table-like structure when several
+               * consecutive lines show a stable two-unit relationship.
+               */
 
-                  String[] parts =
-                          line.trim().split("\\s{2,}");
+              private fun reconstructPage(
+                  page: PageModel
+              ): List<Block> {
 
-                  if (parts.length >= 2) {
-                      return true;
+                  val blocks = mutableListOf<Block>()
+
+                  var prose = StringBuilder()
+
+                  fun flushProse() {
+
+                      val text =
+                          prose.toString().trim()
+
+                      if (text.isNotEmpty()) {
+                          blocks.add(
+                              Block(
+                                  type = "BODY",
+                                  text = text
+                              )
+                          )
+                      }
+
+                      prose = StringBuilder()
                   }
 
-                  return line.matches(
-                          ".*\\S\\s{3,}\\S.*");
+                  var i = 0
+
+                  while (i < page.lines.size) {
+
+                      val line = page.lines[i]
+
+                      /*
+                       * Heading-like lines are recognised conservatively.
+                       */
+
+                      if (isHeading(line)) {
+
+                          flushProse()
+
+                          blocks.add(
+                              Block(
+                                  type = "HEADING",
+                                  text = line
+                              )
+                          )
+
+                          i++
+                          continue
+                      }
+
+                      /*
+                       * Caption detection.
+                       */
+
+                      if (isCaption(line)) {
+
+                          flushProse()
+
+                          blocks.add(
+                              Block(
+                                  type = "FIGURE_CAPTION",
+                                  text = line
+                              )
+                          )
+
+                          i++
+                          continue
+                      }
+
+                      /*
+                       * Repeated aligned-unit detection.
+                       *
+                       * We require several consecutive candidates.
+                       */
+
+                      val table =
+                          detectTableLikeRegion(
+                              page.lines,
+                              i
+                          )
+
+                      if (table != null) {
+
+                          flushProse()
+
+                          blocks.add(
+                              Block(
+                                  type = "TABLE",
+                                  text = table.text
+                              )
+                          )
+
+                          i = table.endIndex
+                          continue
+                      }
+
+                      /*
+                       * Everything else remains body material.
+                       */
+
+                      if (prose.isNotEmpty()) {
+                          prose.append(' ')
+                      }
+
+                      prose.append(line)
+
+                      i++
+                  }
+
+                  flushProse()
+
+                  return blocks
               }
-          }
-          EOF
 
-          echo "V0.13 Android project created."
+              /*
+               * Conservative table detector.
+               *
+               * IMPORTANT:
+               *
+               * It does not label isolated text as table-like.
+               * At least three consecutive lines must contain a
+               * recognisable repeated delimiter relationship.
+               */
 
-      # ------------------------------------------------------------
-      # BUILD
-      # ------------------------------------------------------------
+              private fun detectTableLikeRegion(
+                  lines: List<String>,
+                  start: Int
+              ): TableCandidate? {
 
-      - name: Build APK
-        working-directory: project
-        shell: bash
-        run: |
-          set -e
+                  if (start + 2 >= lines.size) {
+                      return null
+                  }
 
-          gradle wrapper --gradle-version 8.9
+                  val candidates =
+                      mutableListOf<String>()
 
-          chmod +x gradlew
+                  var index = start
 
-          ./gradlew clean assembleDebug --stacktrace
+                  while (
+                      index < lines.size &&
+                      candidates.size < 8
+                  ) {
 
-      # ------------------------------------------------------------
-      # VERIFY APK
-      # ------------------------------------------------------------
+                      val line = lines[index]
 
-      - name: Verify APK
-        shell: bash
-        run: |
-          set -e
+                      if (!looksLikeTwoUnitRow(line)) {
+                          break
+                      }
 
-          echo "Searching for generated APK..."
+                      candidates.add(line)
+                      index++
+                  }
 
-          find project/app/build/outputs/apk \
-            -type f \
-            -name "*.apk" \
-            -print
+                  /*
+                   * Three or more stable rows are required.
+                   */
 
-          APK_COUNT=$(find project/app/build/outputs/apk \
-            -type f \
-            -name "*.apk" | wc -l)
+                  if (candidates.size < 3) {
+                      return null
+                  }
 
-          if [ "$APK_COUNT" -eq 0 ]; then
-            echo "ERROR: No APK was generated."
-            exit 1
-          fi
+                  val text =
+                      candidates.joinToString("\n")
 
-          echo "APK successfully generated."
+                  return TableCandidate(
+                      text = text,
+                      endIndex = index
+                  )
+              }
 
-      # ------------------------------------------------------------
-      # UPLOAD APK
-      # ------------------------------------------------------------
+              private fun looksLikeTwoUnitRow(
+                  text: String
+              ): Boolean {
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Smart-PDF-Reader-V0.13
-          path: project/app
+                  /*
+                   * This is intentionally conservative.
+                   *
+                   * We recognise explicit separators rather than
+                   * guessing from arbitrary word spacing.
+                   */
+
+                  return text.contains(" — ") ||
+                      text.contains(" – ") ||
+                      text.contains(" | ") ||
+                      text.contains("\t")
+              }
+
+              private fun isHeading(
+                  text: String
+              ): Boolean {
+
+                  val t = text.trim()
+
+                  if (t.length < 3) return false
+                  if (t.length > 120) return false
+
+                  if (
+                      t.endsWith(".") ||
+                      t.endsWith(",") ||
+                      t.endsWith(";")
+                  ) {
+                      return false
+                  }
+
+                  val words = t.split(Regex("\\s+"))
+
+                  /*
+                   * Very short title-like lines are treated as headings.
+                   */
+
+                  return words.size <= 8 &&
+                  
