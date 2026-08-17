@@ -1,0 +1,58 @@
+name: Build Android APK V0.12
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'PdfToEpub_V0.12_STRUCTURAL_REPAIR.zip'
+      - '.github/workflows/build-v012.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Extract V0.12 project
+        run: |
+          rm -rf v012
+          mkdir v012
+          unzip -q PdfToEpub_V0.12_STRUCTURAL_REPAIR.zip -d v012
+
+      - name: Verify V0.12 project
+        run: |
+          test -f v012/settings.gradle
+          test -f v012/build.gradle
+          test -f v012/app/build.gradle
+          test -f v012/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+          echo "V0.12 project structure verified."
+
+      - name: Build V0.12 APK
+        working-directory: v012
+        run: |
+          gradle clean assembleDebug --no-daemon
+
+      - name: Verify APK
+        run: |
+          find v012/app/build/outputs/apk/debug -name "*.apk" -type f -print
+          test -n "$(find v012/app/build/outputs/apk/debug -name '*.apk' -type f -print -quit)"
+
+      - name: Upload V0.12 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PDFToEPUB-V0.12-debug
+          path: v012/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
