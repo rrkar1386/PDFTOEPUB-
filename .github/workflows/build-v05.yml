@@ -1,0 +1,77 @@
+name: Build PDF to EPUB V0.5
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract V0.4 project
+        run: |
+          rm -rf project
+          mkdir -p project
+
+          unzip -q PdfToEpub_V0.4_CLEAN.zip -d project
+
+          echo "Extracted files:"
+          find project -maxdepth 3 -type f | head -100
+
+      - name: Find Gradle project
+        run: |
+          GRADLEW=$(find project -type f -name "gradlew" | head -n 1)
+
+          if [ -z "$GRADLEW" ]; then
+            echo "ERROR: gradlew was not found."
+            echo "Searching for Gradle files:"
+            find project -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" -o -name "build.gradle" -o -name "build.gradle.kts" \)
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$GRADLEW")
+
+          echo "Found Gradle wrapper:"
+          echo "$GRADLEW"
+
+          echo "Gradle project directory:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Make gradlew executable
+        run: |
+          chmod +x "$PROJECT_DIR/gradlew"
+
+      - name: Build APK
+        run: |
+          cd "$PROJECT_DIR"
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Find APK
+        run: |
+          APK=$(find "$PROJECT_DIR" -type f -name "*.apk" | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: No APK was produced."
+            exit 1
+          fi
+
+          echo "APK found:"
+          echo "$APK"
+
+          mkdir -p output
+          cp "$APK" output/PdfToEpub_V0.5-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PdfToEpub_V0.5-debug
+          path: output/PdfToEpub_V0.5-debug.apk
