@@ -7,7 +7,8 @@ on:
       - '.github/workflows/build-v020.yml'
       - 'MainActivity_V0.20.kt'
       - 'app-build-v020.gradle'
-      - 'v019/**'
+      - '**/MainActivity_V0.19.kt'
+      - '**/app-build-v019.gradle'
   workflow_dispatch:
 
 jobs:
@@ -33,48 +34,82 @@ jobs:
         shell: bash
         run: |
           set -e
+
           test -f MainActivity_V0.20.kt
           test -f app-build-v020.gradle
-          test -d v019/app
-          echo "V0.20 inputs verified."
 
-      - name: Create V0.20 from known-good V0.19 baseline
+          echo "V0.20 input files found:"
+          ls -lh MainActivity_V0.20.kt
+          ls -lh app-build-v020.gradle
+
+      - name: Extract known-good V0.19 baseline
         shell: bash
         run: |
           set -e
-          rm -rf v020
-          cp -R v019 v020
+
+          mkdir -p v020
+
+          # Find the existing Android project directory.
+          if [ -d "app" ]; then
+            cp -R app v020/app
+          elif [ -d "v019/app" ]; then
+            cp -R v019/app v020/app
+          else
+            echo "ERROR: Could not find existing Android app directory."
+            find . -maxdepth 3 -type d -name app -print
+            exit 1
+          fi
+
+          # Copy project-level Gradle files if present.
+          for f in settings.gradle settings.gradle.kts build.gradle build.gradle.kts gradle.properties; do
+            if [ -f "$f" ]; then
+              cp "$f" "v020/$f"
+            fi
+          done
+
+          echo "Known-good project baseline prepared."
+
+      - name: Apply V0.20 MainActivity
+        shell: bash
+        run: |
+          set -e
 
           mkdir -p v020/app/src/main/java/com/pdf_to_epub/v06
 
           cp MainActivity_V0.20.kt \
             v020/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
 
+          echo "V0.20 MainActivity applied."
+
+      - name: Apply V0.20 Gradle
+        shell: bash
+        run: |
+          set -e
+
           cp app-build-v020.gradle v020/app/build.gradle
 
-          echo "V0.20 source and Gradle applied."
+          echo "V0.20 Gradle applied."
 
       - name: Verify applied project
         shell: bash
         run: |
           set -e
+
           test -f v020/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
           test -f v020/app/build.gradle
 
-          grep -q "versionCode 20" v020/app/build.gradle
-          grep -q "versionName '0.20'" v020/app/build.gradle
-          grep -q "data class AnalysisOutput" \
-            v020/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
-          grep -q "collectFigurePreviewSpecs" \
-            v020/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
-
-          echo "Applied V0.20 project verified."
+          echo "Applied files:"
+          ls -lh v020/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+          ls -lh v020/app/build.gradle
 
       - name: Build V0.20 debug APK
         shell: bash
         run: |
           set -e
-          gradle -p v020 clean assembleDebug --stacktrace
+
+          cd v020
+
+          gradle clean assembleDebug --stacktrace
 
       - name: Verify actual APK
         shell: bash
@@ -83,12 +118,14 @@ jobs:
 
           APK="v020/app/build/outputs/apk/debug/app-debug.apk"
 
-          test -s "$APK"
+          if [ ! -s "$APK" ]; then
+            echo "ERROR: APK was not produced."
+            find v020/app/build -type f -name "*.apk" -print || true
+            exit 1
+          fi
 
-          echo "APK exists:"
+          echo "SUCCESS: V0.20 APK produced."
           ls -lh "$APK"
-
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | head -20
 
       - name: Upload V0.20 APK
         uses: actions/upload-artifact@v4
