@@ -1,0 +1,123 @@
+name: Build V0.18 APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-v018.yml'
+      - 'MainActivity_V0.18.kt'
+      - 'app-build-v018.gradle'
+      - 'PdfToEpub_V0.17_CONTEXTUAL_LAYOUT_REPAIR.zip'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Verify V0.18 inputs
+        run: |
+          set -e
+          test -s MainActivity_V0.18.kt
+          test -s app-build-v018.gradle
+          test -s PdfToEpub_V0.17_CONTEXTUAL_LAYOUT_REPAIR.zip
+
+          grep -q 'V0.18' MainActivity_V0.18.kt
+          grep -q "versionCode 18" app-build-v018.gradle
+          grep -q "versionName '0.18'" app-build-v018.gradle
+          grep -q 'detectIntentionalWhitespace' MainActivity_V0.18.kt
+          grep -q 'detectGlossaryMode' MainActivity_V0.18.kt
+          grep -q 'TABLE_CANDIDATES' MainActivity_V0.18.kt
+
+          echo "V0.18 inputs verified."
+
+      - name: Extract V0.17 known-good baseline
+        run: |
+          set -e
+          rm -rf v018
+          mkdir v018
+
+          unzip -q PdfToEpub_V0.17_CONTEXTUAL_LAYOUT_REPAIR.zip -d v018
+
+          test -f v018/settings.gradle
+          test -f v018/build.gradle
+          test -f v018/app/build.gradle
+          test -f v018/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+      - name: Apply V0.18 source and Gradle
+        run: |
+          set -e
+
+          cp MainActivity_V0.18.kt \
+            v018/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          cp app-build-v018.gradle \
+            v018/app/build.gradle
+
+      - name: Verify applied V0.18 project
+        run: |
+          set -e
+
+          grep -q 'V0.18' \
+            v018/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q "versionCode 18" \
+            v018/app/build.gradle
+
+          grep -q "versionName '0.18'" \
+            v018/app/build.gradle
+
+          grep -q 'detectIntentionalWhitespace' \
+            v018/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q 'detectGlossaryMode' \
+            v018/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q 'TABLE_CANDIDATES' \
+            v018/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q 'pageNumber: Int = 0' \
+            v018/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          echo "Applied V0.18 source verified."
+
+      - name: Build V0.18 debug APK
+        working-directory: v018
+        run: gradle clean assembleDebug --no-daemon
+
+      - name: Verify actual APK
+        run: |
+          set -e
+
+          APK="v018/app/build/outputs/apk/debug/app-debug.apk"
+
+          test -s "$APK"
+          file "$APK"
+
+          # Make sure it is actually a valid APK/ZIP container.
+          unzip -tq "$APK" >/dev/null
+
+          ls -lh "$APK"
+
+          echo "ACTUAL V0.18 APK BUILD VERIFIED."
+
+      - name: Upload V0.18 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PdfToEpub_V0.18_debug
+          path: v018/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
