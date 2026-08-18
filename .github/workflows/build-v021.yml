@@ -1,0 +1,137 @@
+name: Build V0.21 APK
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/build-v021.yml'
+      - 'MainActivity_V0.21.kt'
+      - 'app-build-v021.gradle'
+      - 'PdfToEpub_V0.15_CONTEXTUAL_SPATIAL_RECONSTRUCTION.zip'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Verify V0.21 inputs
+        run: |
+          set -e
+
+          test -s MainActivity_V0.21.kt
+          test -s app-build-v021.gradle
+          test -s PdfToEpub_V0.15_CONTEXTUAL_SPATIAL_RECONSTRUCTION.zip
+
+          grep -q 'V0.21' MainActivity_V0.21.kt
+          grep -q "versionCode 21" app-build-v021.gradle
+          grep -q "versionName '0.21'" app-build-v021.gradle
+
+          # Existing V0.20/V0.21 structural pipeline protections
+          grep -q 'detectIntentionalWhitespace' MainActivity_V0.21.kt
+          grep -q 'detectGlossaryMode' MainActivity_V0.21.kt
+          grep -q 'TABLE_CANDIDATES' MainActivity_V0.21.kt
+          grep -q 'documentReadingOrder' MainActivity_V0.21.kt
+
+          # New V0.21 figure-detection layer
+          grep -q 'augmentFigureSpecsWithVisualEvidence' MainActivity_V0.21.kt
+          grep -q 'detectVisualFigureRegion' MainActivity_V0.21.kt
+
+          echo "V0.21 inputs verified."
+
+      - name: Extract V0.15 known-good project baseline
+        run: |
+          set -e
+
+          rm -rf v021
+          mkdir v021
+
+          unzip -q PdfToEpub_V0.15_CONTEXTUAL_SPATIAL_RECONSTRUCTION.zip -d v021
+
+          test -f v021/settings.gradle
+          test -f v021/build.gradle
+          test -f v021/app/build.gradle
+          test -f v021/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          echo "Known-good V0.15 baseline verified."
+
+      - name: Apply V0.21 source and Gradle
+        run: |
+          set -e
+
+          cp MainActivity_V0.21.kt \
+            v021/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          cp app-build-v021.gradle \
+            v021/app/build.gradle
+
+      - name: Verify applied V0.21 project
+        run: |
+          set -e
+
+          grep -q 'V0.21' \
+            v021/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q "versionCode 21" \
+            v021/app/build.gradle
+
+          grep -q "versionName '0.21'" \
+            v021/app/build.gradle
+
+          grep -q 'detectIntentionalWhitespace' \
+            v021/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q 'detectGlossaryMode' \
+            v021/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q 'TABLE_CANDIDATES' \
+            v021/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q 'documentReadingOrder' \
+            v021/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q 'augmentFigureSpecsWithVisualEvidence' \
+            v021/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          echo "Applied V0.21 project verified."
+
+      - name: Build V0.21 debug APK
+        working-directory: v021
+        run: |
+          set -e
+          gradle clean assembleDebug --no-daemon
+
+      - name: Verify actual APK
+        run: |
+          set -e
+
+          APK="v021/app/build/outputs/apk/debug/app-debug.apk"
+
+          test -s "$APK"
+          file "$APK"
+          unzip -tq "$APK" >/dev/null
+          ls -lh "$APK"
+
+          echo "ACTUAL V0.21 APK BUILD VERIFIED."
+
+      - name: Upload V0.21 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PdfToEpub_V0.21_debug
+          path: v021/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
