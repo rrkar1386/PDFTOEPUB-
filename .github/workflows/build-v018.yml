@@ -2,12 +2,14 @@ name: Build V0.18 APK
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
       - '.github/workflows/build-v018.yml'
       - 'MainActivity_V0.18.kt'
       - 'app-build-v018.gradle'
-      - 'PdfToEpub_V0.17_CONTEXTUAL_LAYOUT_REPAIR.zip'
+      - 'PdfToEpub_V0.15_CONTEXTUAL_SPATIAL_RECONSTRUCTION.zip'
+
   workflow_dispatch:
 
 jobs:
@@ -32,45 +34,66 @@ jobs:
       - name: Verify V0.18 inputs
         run: |
           set -e
+
           test -s MainActivity_V0.18.kt
           test -s app-build-v018.gradle
-          test -s PdfToEpub_V0.17_CONTEXTUAL_LAYOUT_REPAIR.zip
+          test -s PdfToEpub_V0.15_CONTEXTUAL_SPATIAL_RECONSTRUCTION.zip
 
           grep -q 'V0.18' MainActivity_V0.18.kt
           grep -q "versionCode 18" app-build-v018.gradle
           grep -q "versionName '0.18'" app-build-v018.gradle
+
           grep -q 'detectIntentionalWhitespace' MainActivity_V0.18.kt
           grep -q 'detectGlossaryMode' MainActivity_V0.18.kt
           grep -q 'TABLE_CANDIDATES' MainActivity_V0.18.kt
+          grep -q 'pageNumber: Int = 0' MainActivity_V0.18.kt
 
           echo "V0.18 inputs verified."
 
-      - name: Extract V0.17 known-good baseline
+      - name: Extract V0.15 known-good baseline
         run: |
           set -e
+
           rm -rf v018
           mkdir v018
 
-          unzip -q PdfToEpub_V0.17_CONTEXTUAL_LAYOUT_REPAIR.zip -d v018
+          unzip -q \
+            PdfToEpub_V0.15_CONTEXTUAL_SPATIAL_RECONSTRUCTION.zip \
+            -d v018
 
           test -f v018/settings.gradle
           test -f v018/build.gradle
           test -f v018/app/build.gradle
           test -f v018/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
 
-      - name: Apply V0.18 source and Gradle
+          echo "V0.15 baseline extracted successfully."
+
+      - name: Apply V0.18 source
         run: |
           set -e
 
           cp MainActivity_V0.18.kt \
             v018/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
 
+          echo "V0.18 MainActivity applied."
+
+      - name: Apply V0.18 Gradle
+        run: |
+          set -e
+
           cp app-build-v018.gradle \
             v018/app/build.gradle
+
+          echo "V0.18 Gradle applied."
 
       - name: Verify applied V0.18 project
         run: |
           set -e
+
+          test -s \
+            v018/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          test -s v018/app/build.gradle
 
           grep -q 'V0.18' \
             v018/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
@@ -93,11 +116,14 @@ jobs:
           grep -q 'pageNumber: Int = 0' \
             v018/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
 
-          echo "Applied V0.18 source verified."
+          echo "Applied V0.18 project verified."
 
       - name: Build V0.18 debug APK
         working-directory: v018
-        run: gradle clean assembleDebug --no-daemon
+        run: |
+          set -e
+
+          gradle clean assembleDebug --no-daemon
 
       - name: Verify actual APK
         run: |
@@ -106,9 +132,9 @@ jobs:
           APK="v018/app/build/outputs/apk/debug/app-debug.apk"
 
           test -s "$APK"
+
           file "$APK"
 
-          # Make sure it is actually a valid APK/ZIP container.
           unzip -tq "$APK" >/dev/null
 
           ls -lh "$APK"
