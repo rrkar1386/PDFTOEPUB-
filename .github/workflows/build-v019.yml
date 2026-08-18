@@ -1,0 +1,165 @@
+name: Build V0.19 APK
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/build-v019.yml'
+      - 'MainActivity_V0.19.kt'
+      - 'app-build-v019.gradle'
+      - 'PdfToEpub_V0.15_CONTEXTUAL_SPATIAL_RECONSTRUCTION.zip'
+
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Verify V0.19 inputs
+        shell: bash
+        run: |
+          set -e
+
+          test -s MainActivity_V0.19.kt
+          test -s app-build-v019.gradle
+          test -s PdfToEpub_V0.15_CONTEXTUAL_SPATIAL_RECONSTRUCTION.zip
+
+          grep -q 'V0.19' MainActivity_V0.19.kt
+          grep -q 'collectFigurePreviewSpecs' MainActivity_V0.19.kt
+          grep -q 'renderFigurePreviews' MainActivity_V0.19.kt
+
+          grep -q 'repairDetectedTableRows' MainActivity_V0.19.kt
+          grep -q 'detectGlossaryMode' MainActivity_V0.19.kt
+
+          grep -q "versionCode 19" app-build-v019.gradle
+          grep -q "versionName '0.19'" app-build-v019.gradle
+
+          echo "V0.19 inputs verified."
+
+      - name: Extract known-good Android baseline
+        shell: bash
+        run: |
+          set -e
+
+          rm -rf v019
+          mkdir v019
+
+          unzip -q \
+            PdfToEpub_V0.15_CONTEXTUAL_SPATIAL_RECONSTRUCTION.zip \
+            -d v019
+
+          test -f v019/settings.gradle
+          test -f v019/build.gradle
+          test -f v019/app/build.gradle
+          test -f v019/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          echo "Known-good Android baseline extracted."
+
+      - name: Apply V0.19 MainActivity
+        shell: bash
+        run: |
+          set -e
+
+          cp MainActivity_V0.19.kt \
+            v019/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          echo "V0.19 MainActivity applied."
+
+      - name: Apply V0.19 Gradle
+        shell: bash
+        run: |
+          set -e
+
+          cp app-build-v019.gradle \
+            v019/app/build.gradle
+
+          echo "V0.19 Gradle applied."
+
+      - name: Verify applied project
+        shell: bash
+        run: |
+          set -e
+
+          test -s \
+            v019/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          test -s v019/app/build.gradle
+
+          grep -q 'V0.19' \
+            v019/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q 'collectFigurePreviewSpecs' \
+            v019/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q 'renderFigurePreviews' \
+            v019/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q 'repairDetectedTableRows' \
+            v019/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q 'detectGlossaryMode' \
+            v019/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q "versionCode 19" \
+            v019/app/build.gradle
+
+          grep -q "versionName '0.19'" \
+            v019/app/build.gradle
+
+          echo "Applied V0.19 project verified."
+
+      - name: Build V0.19 debug APK
+        working-directory: v019
+        shell: bash
+        run: |
+          set -e
+
+          gradle clean assembleDebug \
+            --no-daemon \
+            --stacktrace
+
+      - name: Verify actual APK
+        shell: bash
+        run: |
+          set -e
+
+          APK="v019/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -s "$APK" ]; then
+            echo "ERROR: V0.19 APK was not produced."
+            exit 1
+          fi
+
+          file "$APK"
+
+          unzip -tq "$APK" >/dev/null
+
+          echo "ACTUAL V0.19 APK VERIFIED:"
+          ls -lh "$APK"
+
+          echo "SHA256:"
+          sha256sum "$APK"
+
+      - name: Upload V0.19 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PdfToEpub_V0.19_debug
+          path: v019/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
