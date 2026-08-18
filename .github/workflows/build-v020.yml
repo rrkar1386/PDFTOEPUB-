@@ -2,13 +2,14 @@ name: Build V0.20 APK
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
       - '.github/workflows/build-v020.yml'
       - 'MainActivity_V0.20.kt'
       - 'app-build-v020.gradle'
-      - '**/MainActivity_V0.19.kt'
-      - '**/app-build-v019.gradle'
+      - 'PdfToEpub_V0.15_CONTEXTUAL_SPATIAL_RECONSTRUCTION.zip'
+
   workflow_dispatch:
 
 jobs:
@@ -31,50 +32,50 @@ jobs:
           gradle-version: '8.9'
 
       - name: Verify V0.20 inputs
-        shell: bash
         run: |
           set -e
 
-          test -f MainActivity_V0.20.kt
-          test -f app-build-v020.gradle
+          test -s MainActivity_V0.20.kt
+          test -s app-build-v020.gradle
+          test -s PdfToEpub_V0.15_CONTEXTUAL_SPATIAL_RECONSTRUCTION.zip
 
-          echo "V0.20 input files found:"
-          ls -lh MainActivity_V0.20.kt
-          ls -lh app-build-v020.gradle
+          grep -q 'V0.20' MainActivity_V0.20.kt
+          grep -q "versionCode 20" app-build-v020.gradle
+          grep -q "versionName '0.20'" app-build-v020.gradle
 
-      - name: Extract known-good V0.19 baseline
-        shell: bash
+          grep -q 'detectIntentionalWhitespace' MainActivity_V0.20.kt
+          grep -q 'detectGlossaryMode' MainActivity_V0.20.kt
+          grep -q 'TABLE_CANDIDATES' MainActivity_V0.20.kt
+          grep -q 'pageNumber: Int = 0' MainActivity_V0.20.kt
+
+          grep -q 'AnalysisOutput' MainActivity_V0.20.kt
+          grep -q 'collectFigurePreviewSpecs' MainActivity_V0.20.kt
+          grep -q 'showFigurePreviews' MainActivity_V0.20.kt
+          grep -q 'figureContainer' MainActivity_V0.20.kt
+
+          echo "V0.20 inputs verified."
+
+      - name: Extract V0.18 known-good baseline
         run: |
           set -e
 
-          mkdir -p v020
+          rm -rf v020
+          mkdir v020
 
-          # Find the existing Android project directory.
-          if [ -d "app" ]; then
-            cp -R app v020/app
-          elif [ -d "v019/app" ]; then
-            cp -R v019/app v020/app
-          else
-            echo "ERROR: Could not find existing Android app directory."
-            find . -maxdepth 3 -type d -name app -print
-            exit 1
-          fi
+          unzip -q \
+            PdfToEpub_V0.15_CONTEXTUAL_SPATIAL_RECONSTRUCTION.zip \
+            -d v020
 
-          # Copy project-level Gradle files if present.
-          for f in settings.gradle settings.gradle.kts build.gradle build.gradle.kts gradle.properties; do
-            if [ -f "$f" ]; then
-              cp "$f" "v020/$f"
-            fi
-          done
+          test -f v020/settings.gradle
+          test -f v020/build.gradle
+          test -f v020/app/build.gradle
+          test -f v020/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
 
-          echo "Known-good project baseline prepared."
+          echo "Known-good V0.18 baseline extracted successfully."
 
       - name: Apply V0.20 MainActivity
-        shell: bash
         run: |
           set -e
-
-          mkdir -p v020/app/src/main/java/com/pdf_to_epub/v06
 
           cp MainActivity_V0.20.kt \
             v020/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
@@ -82,54 +83,75 @@ jobs:
           echo "V0.20 MainActivity applied."
 
       - name: Apply V0.20 Gradle
-        shell: bash
         run: |
           set -e
 
-          cp app-build-v020.gradle v020/app/build.gradle
+          cp app-build-v020.gradle \
+            v020/app/build.gradle
 
           echo "V0.20 Gradle applied."
 
-      - name: Verify applied project
-        shell: bash
+      - name: Verify applied V0.20 project
         run: |
           set -e
 
-          test -f v020/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
-          test -f v020/app/build.gradle
+          test -s \
+            v020/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
 
-          echo "Applied files:"
-          ls -lh v020/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
-          ls -lh v020/app/build.gradle
+          test -s v020/app/build.gradle
+
+          grep -q 'V0.20' \
+            v020/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q "versionCode 20" \
+            v020/app/build.gradle
+
+          grep -q "versionName '0.20'" \
+            v020/app/build.gradle
+
+          grep -q 'detectIntentionalWhitespace' \
+            v020/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q 'detectGlossaryMode' \
+            v020/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q 'TABLE_CANDIDATES' \
+            v020/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q 'AnalysisOutput' \
+            v020/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          grep -q 'showFigurePreviews' \
+            v020/app/src/main/java/com/pdf_to_epub/v06/MainActivity.kt
+
+          echo "Applied V0.20 project verified."
 
       - name: Build V0.20 debug APK
-        shell: bash
+        working-directory: v020
         run: |
           set -e
 
-          cd v020
-
-          gradle clean assembleDebug --stacktrace
+          gradle clean assembleDebug --no-daemon --stacktrace
 
       - name: Verify actual APK
-        shell: bash
         run: |
           set -e
 
           APK="v020/app/build/outputs/apk/debug/app-debug.apk"
 
-          if [ ! -s "$APK" ]; then
-            echo "ERROR: APK was not produced."
-            find v020/app/build -type f -name "*.apk" -print || true
-            exit 1
-          fi
+          test -s "$APK"
 
-          echo "SUCCESS: V0.20 APK produced."
+          file "$APK"
+
+          unzip -tq "$APK" >/dev/null
+
           ls -lh "$APK"
+
+          echo "ACTUAL V0.20 APK BUILD VERIFIED."
 
       - name: Upload V0.20 APK
         uses: actions/upload-artifact@v4
         with:
-          name: PDFTOEPUB-V0.20-debug
+          name: PdfToEpub_V0.20_debug
           path: v020/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
